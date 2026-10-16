@@ -21,6 +21,7 @@
  *******************************************************************************/
 
 #include "core.hpp"
+#include "gui.hpp"
 #include "json.hpp"
 
 #include <fstream>
@@ -247,7 +248,8 @@ ml_result_t kernelloader::core::load_mod(mod_manifest_t *mod_manifest) {
         kernel_mod_handles.emplace(mod_manifest->mod_id, mod_handle);
         kernel_mod_multiplayer_mod_infos.emplace(mod_manifest->mod_id, mod_multiplayer_mod_infos);
 
-        *static_cast<void **>(memdl_sym(handle, "mod_logger_write")) = reinterpret_cast<void*>(logger::mod_logger_write_imp);
+        if (auto slot = static_cast<void **>(memdl_sym(handle, "mod_logger_write")))
+            *slot = reinterpret_cast<void*>(logger::mod_logger_write_imp);
         LOG_DEBUG("Logger function pointer set in mod");
 
         LOG_INFO("Mod loaded successfully: {}", mod_manifest->mod_id);
@@ -284,6 +286,7 @@ ml_result_t kernelloader::core::unload_mod(mod_manifest_t *mod_manifest) {
     const auto mod_multiplayer_mod_info = kernel_mod_multiplayer_mod_infos[mod_manifest->mod_id];
 
     LOG_DEBUG("Cleaning up mod operations...");
+    if (!gui::detach(mod)) return ML_ERROR; // Never unload the currently executing callback.
     mod->ops->cleanup_mod(mod);
 
     LOG_DEBUG("Closing library handle...");
@@ -307,19 +310,14 @@ ml_result_t kernelloader::core::unload_mod(mod_manifest_t *mod_manifest) {
 ml_result_t kernelloader::core::reload_mod(mod_manifest_t *mod_manifest) {
     LOG_INFO("Reloading mod: {}", mod_manifest->mod_id);
 
-    auto it = kernel_mod_handles.find(mod_manifest->mod_id);
-    if (it != kernel_mod_handles.end()) {
-        LOG_DEBUG("Mod exists, unloading first...");
-        unload_mod(mod_manifest);
-        LOG_DEBUG("Loading mod again...");
-        load_mod(mod_manifest);
-    } else {
-        LOG_DEBUG("Mod not found, loading new instance...");
-        load_mod(mod_manifest);
+    if (kernel_mod_handles.find(mod_manifest->mod_id) != kernel_mod_handles.end()) {
+        const auto result = unload_mod(mod_manifest);
+        if (result != ML_SUCCESS) return result;
     }
+    const auto result = load_mod(mod_manifest);
+    if (result != ML_SUCCESS) return result;
+    return init_mod(mod_manifest); // Re-register GUI after reload.
 
-    LOG_INFO("Mod reloaded successfully: {}", mod_manifest->mod_id);
-    return ML_SUCCESS;
 }
 
 ml_result_t kernelloader::core::init_mod(mod_manifest_t *mod_manifest) {
@@ -333,6 +331,13 @@ ml_result_t kernelloader::core::init_mod(mod_manifest_t *mod_manifest) {
 
     const auto mod = it->second;
     LOG_DEBUG("Calling mod's init_mod function...");
+    // Optional entry keeps the legacy kernel_mod_ops_t ABI unchanged.
+    auto set_gui = reinterpret_cast<void(*)(const kl_gui_api*,void*)>(memdl_sym(mod->lib_handle,"kernel_mod_set_gui"));
+    if (set_gui) {
+        gui::attach(mod, mod_manifest->mod_id, mod->private_dir);
+        try { set_gui(gui::api(),mod); }
+        catch (...) { gui::detach(mod); return ML_ERROR; }
+    }
     mod->ops->init_mod(mod);
 
     LOG_INFO("Mod initialized successfully: {}", mod_manifest->mod_id);
@@ -362,12 +367,15 @@ ml_result_t kernelloader::core::init_ml(ml_entry_t *ml_entry) {
     LOG_DEBUG("Initializing mod logger...");
     logger::init_mod();
 
+    gui::install();
     LOG_INFO("KernelLoader initialized successfully");
     return ML_SUCCESS;
 }
 
 ml_result_t kernelloader::core::cleanup_ml(ml_entry_t *ml_entry) {
     LOG_INFO("Cleaning up KernelLoader...");
+
+    gui::shutdown();
 
     LOG_DEBUG("Shutting down logger...");
     logger::shutdown();
@@ -382,8 +390,8 @@ ml_result_t kernelloader::core::cleanup_ml(ml_entry_t *ml_entry) {
 const ml_info_t * kernelloader::core::get_info() {
     static ml_info_t info = {
         "eternal.future.kernelloader",
-        1,
-        "1.0.0",
+        2,
+        "1.1.0",
         1,
         0,
         nullptr

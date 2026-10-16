@@ -1,0 +1,35 @@
+name: Build KernelLoader GUI
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compilers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 gcc-multilib g++-multilib
+      - name: Set up Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
+      - name: Download packaging runtime
+        run: |
+          mkdir -p tefkernel
+          curl --fail --location --retry 3 -o tefkernel.zip https://github.com/eternalfuture-e38299/TEFKernel/releases/download/1.1.1/tefkernel.zip
+          unzip -q tefkernel.zip -d tefkernel
+      - name: Build, test and package
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          TEFKERNEL_LIB: ${{ github.workspace }}/tefkernel/libtefkernel.linux.x86_64.so
+        run: bash build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KernelLoader-GUI-packages
+          path: dist/*.zip
+          if-no-files-found: error

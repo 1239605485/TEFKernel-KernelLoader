@@ -10,11 +10,11 @@ else()
     add_compile_options(-g -O0)
 endif()
 
-set(ANDROID_MODE OFF)
+option(ANDROID_MODE "Legacy Android mode" OFF)
 if (${ANDROID_MODE})
     set(ANDROID ON)
     add_compile_definitions(__ANDROID__)
-    set(CMAKE_SYSROOT ~/Android/Sdk/ndk/30.0.14904198/toolchains/llvm/prebuilt/linux-x86_64/sysroot/)
+    # The NDK toolchain supplies its own sysroot.
 endif ()
 
 add_subdirectory(lib/spdlog-1.17.0)
@@ -22,6 +22,8 @@ add_subdirectory(lib/spdlog-1.17.0)
 add_library(KernelLoader SHARED
         src/core.cpp
         src/logger.cpp
+        src/gui.cpp
+        src/gui_images.cpp
         includes/tefkernel/tef_api_imp.c
 )
 
@@ -32,7 +34,7 @@ target_include_directories(KernelLoader
 )
 
 target_link_libraries(KernelLoader
-        spdlog::spdlog
+        PRIVATE spdlog::spdlog
 )
 
 
@@ -115,3 +117,34 @@ message(STATUS "============================")]]
 set_target_properties(KernelLoader PROPERTIES
     OUTPUT_NAME "loader.${SYSTEM_NAME}.${ARCH}"
 )
+
+if(ANDROID)
+    add_subdirectory(lib/gui-xdl)
+    set_target_properties(xdl PROPERTIES C_VISIBILITY_PRESET hidden)
+    target_link_libraries(KernelLoader PRIVATE xdl ${CMAKE_DL_LIBS})
+endif()
+option(KERNELLOADER_BUILD_GUI_DEMO "Build native GUI test mod" ON)
+if(KERNELLOADER_BUILD_GUI_DEMO)
+    add_library(gui_demo SHARED examples/gui_demo/gui_demo.cpp)
+    target_include_directories(gui_demo PRIVATE mod-api)
+    target_compile_definitions(gui_demo PRIVATE BUILDING_DLL=1)
+    set_target_properties(gui_demo PROPERTIES OUTPUT_NAME "gui_demo.${SYSTEM_NAME}.${ARCH}")
+endif()
+option(KERNELLOADER_BUILD_GUI_TESTS "Build host GUI runtime tests" OFF)
+if(KERNELLOADER_BUILD_GUI_TESTS AND NOT ANDROID AND NOT WIN32)
+    enable_testing()
+    find_package(Threads REQUIRED)
+    add_executable(gui_runtime_test tests/gui_runtime_test.cpp src/gui_images.cpp includes/tefkernel/tef_api_imp.c)
+    target_include_directories(gui_runtime_test PRIVATE includes mod-api)
+    target_link_libraries(gui_runtime_test PRIVATE spdlog::spdlog Threads::Threads)
+    target_compile_options(gui_runtime_test PRIVATE -UNDEBUG)
+    add_test(NAME gui_runtime_test COMMAND gui_runtime_test)
+endif()
+
+if(MINGW)
+    target_link_options(KernelLoader PRIVATE -static)
+    target_link_options(KernelLoader PRIVATE -Wl,--export-all-symbols)
+    if(TARGET gui_demo)
+        target_link_options(gui_demo PRIVATE -static)
+    endif()
+endif()
