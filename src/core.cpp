@@ -390,8 +390,8 @@ ml_result_t kernelloader::core::cleanup_ml(ml_entry_t *ml_entry) {
 const ml_info_t * kernelloader::core::get_info() {
     static ml_info_t info = {
         "eternal.future.kernelloader",
-        2,
-        "1.1.0",
+        5,
+        "1.2.0",
         1,
         0,
         nullptr

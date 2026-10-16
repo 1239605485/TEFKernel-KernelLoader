@@ -1,35 +1,80 @@
-name: Build KernelLoader GUI
+name: Build KernelLoader
 on:
   push:
     branches: [main, master]
   pull_request:
   workflow_dispatch:
 jobs:
-  build:
+  tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install cross compilers
+      - name: Build focused GUI tests
+        run: |
+          cmake -S . -B build/tests -DCMAKE_BUILD_TYPE=Release -DKERNELLOADER_BUILD_GUI_TESTS=ON
+          cmake --build build/tests --target gui_runtime_test gui_android_input_test gui_ime_test -j 2
+          ctest --test-dir build/tests --output-on-failure
+  build:
+    needs: tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: android-arm64, os: ubuntu-latest}
+          - {target: android-arm, os: ubuntu-latest}
+          - {target: windows-x64, os: ubuntu-latest}
+          - {target: windows-x86, os: ubuntu-latest}
+          - {target: linux-x64, os: ubuntu-latest}
+          - {target: linux-x86, os: ubuntu-latest}
+          - {target: macos-x64, os: macos-latest}
+          - {target: macos-arm64, os: macos-latest}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux cross compilers
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y mingw-w64 gcc-multilib g++-multilib
       - name: Set up Android NDK
+        if: startsWith(matrix.target, 'android-')
         id: ndk
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r28
-      - name: Download packaging runtime
+      - name: Build target
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: bash build.sh '${{ matrix.target }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KernelLoader-lib-${{ matrix.target }}
+          path: dist/${{ matrix.target }}/*
+          if-no-files-found: error
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: KernelLoader-lib-*
+          path: build/package-stage
+          merge-multiple: true
+      - name: Prepare packaging runtime
         run: |
           mkdir -p tefkernel
           curl --fail --location --retry 3 -o tefkernel.zip https://github.com/eternalfuture-e38299/TEFKernel/releases/download/1.1.1/tefkernel.zip
           unzip -q tefkernel.zip -d tefkernel
-      - name: Build, test and package
+      - name: Package original platform matrix
         env:
-          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
           TEFKERNEL_LIB: ${{ github.workspace }}/tefkernel/libtefkernel.linux.x86_64.so
-        run: bash build.sh
+        run: |
+          mkdir -p dist
+          python3 tools/tefpkg_tool.py build build/package-stage dist/kernelloader.tefpkg 0x114514 -c tools/compress_loader.json
+          python3 tools/package_loader.py
       - uses: actions/upload-artifact@v4
         with:
-          name: KernelLoader-GUI-packages
-          path: dist/*.zip
+          name: KernelLoader-install-package
+          path: dist/KernelLoader-*.zip
           if-no-files-found: error

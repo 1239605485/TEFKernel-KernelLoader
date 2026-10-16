@@ -1,0 +1,15 @@
+{
+  "type": "Mod",
+  "file": "mod.json",
+  "parentLoader": "eternal.future.kernelloader",
+  "icon": {
+    "type": "Default"
+  },
+  "resources": "Resources",
+  "plugins": {
+    "type": "NULL"
+  },
+  "tefkernel": {
+    "minVersion": "1.0.0"
+  }
+}

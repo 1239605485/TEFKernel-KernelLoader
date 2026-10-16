@@ -1,0 +1,27 @@
+{
+  "pkgId": "liuxin.native.gui.test",
+  "name": "原生 GUI 测试",
+  "author": "liuxin",
+  "description": "需要 KernelLoader 1.2.0：内置拼音中文输入、窗口缩放、收起、换肤、滚动和常用控件测试。",
+  "version": "1.1.0",
+  "versionCode": 2,
+  "dependence": [],
+  "support": {
+    "android": {
+      "arm64": true,
+      "arm": true
+    },
+    "windows": {
+      "x64": true,
+      "x86": true
+    },
+    "linux": {
+      "x64": true,
+      "x86": true
+    },
+    "mac": {
+      "x64": true,
+      "arm64": true
+    }
+  }
+}

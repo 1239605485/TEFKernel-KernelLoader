@@ -17,12 +17,20 @@ static void get_field(patch_handle_t field,patch_handle_t,void *value){
 static void set_field(patch_handle_t field,patch_handle_t,void *value){if(reinterpret_cast<uintptr_t>(field)==4)down=*static_cast<unsigned char*>(value);}
 static int a_clicks=0,b_clicks=0,a_frames=0,b_frames=0;
 static void a(const kl_gui_frame *f,void*){assert(!detach(reinterpret_cast<void*>(100)));++a_frames;a_clicks+=api()->button(f,"button","A",10,10,80,40);}
+static void scroller(const kl_gui_frame *f,void*){
+    api()->begin_scroll(f,"list",{0,0,100,60},200);
+    a_clicks+=api()->button(f,"inside","inside",10,90,70,32);
+    api()->end_scroll(f);
+}
 static void b(const kl_gui_frame *f,void*){++b_frames;b_clicks+=api()->button(f,"button","B",10,10,80,40);}
 static void frame(){frame_postfix(nullptr,nullptr,nullptr,nullptr);}
 static std::promise<void> started,proceed;
 static std::shared_future<void> gate;
 static void blocking(const kl_gui_frame*,void*){started.set_value();gate.wait();}
 int main(){
+    assert(utf8_prefix("天顶剑😀",5)=="天");
+    assert(utf8_prefix("天顶剑😀",6)=="天顶");
+    assert(utf8_prefix("天顶剑😀",10)=="天顶剑");
     patchlib_field_get_value=get_field;patchlib_field_set_value=set_field;
     g_gfx.ready=g_gfx.usable=true;g_gfx.f_sprite_batch=reinterpret_cast<void*>(1);
     g_gfx.a_mouse_x.field=reinterpret_cast<void*>(2);g_gfx.a_mouse_y.field=reinterpret_cast<void*>(3);g_gfx.a_mouse_left.field=reinterpret_cast<void*>(4);
@@ -35,6 +43,15 @@ int main(){
     api()->set_visible(ob,0);mx=20;
     down=1;update_prefix(nullptr,nullptr,nullptr,nullptr);assert(!down);frame();
     down=0;update_prefix(nullptr,nullptr,nullptr,nullptr);frame();assert(a_clicks==1); // suppression preserves GUI input
+    int before=a_clicks;
+    api()->set_window_scale(oa,0.5f);mx=70;my=20;down=1;frame();down=0;frame();assert(a_clicks==before);
+    mx=20;my=15;down=1;frame();down=0;frame();assert(a_clicks==before+1);
+    api()->set_window_scale(oa,1.5f);mx=120;my=30;down=1;frame();down=0;frame();assert(a_clicks==before+2);
+    api()->set_collapsed(oa,1);assert(!point_in_gui(20,70));api()->set_collapsed(oa,0);
+    api()->set_window_scale(oa,1);api()->register_window(oa,scroller,nullptr,{0,0,100,100});
+    api()->scroll_to(oa,"list",80);mx=20;my=20;before=a_clicks;
+    down=1;frame();down=0;frame();assert(a_clicks==before+1);
+    before=a_clicks;down=1;frame();my=50;frame();down=0;frame();assert(a_clicks==before);
     auto prior=a_frames;detach(oa);frame();assert(a_frames==prior);
     api()->unregister_window(ob);auto old=b_frames;api()->set_visible(ob,1);frame();assert(b_frames==old);
     gate=proceed.get_future().share();api()->register_window(ob,blocking,nullptr,{0,0,100,80});

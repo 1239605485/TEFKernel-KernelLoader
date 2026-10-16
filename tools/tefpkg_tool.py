@@ -42,6 +42,8 @@ LOADER_IDS = {
     ("linux", "x86"):     4,
     ("windows", "x64"):   5,
     ("windows", "x86"):   6,
+    ("darwin", "arm64"):  7,
+    ("darwin", "x64"):    8,
 }
 
 # 压缩模式 -> (tefpkg_compress_t, level)
