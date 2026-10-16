@@ -48,7 +48,7 @@ jobs:
         run: bash build.sh '${{ matrix.target }}'
       - uses: actions/upload-artifact@v4
         with:
-          name: KernelLoader-lib-${{ matrix.target }}
+          name: BUILD-ONLY-NOT-INSTALLABLE-${{ matrix.target }}
           path: dist/${{ matrix.target }}/*
           if-no-files-found: error
   package:
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: KernelLoader-lib-*
+          pattern: BUILD-ONLY-NOT-INSTALLABLE-*
           path: build/package-stage
           merge-multiple: true
       - name: Prepare packaging runtime
@@ -73,8 +73,10 @@ jobs:
           mkdir -p dist
           python3 tools/tefpkg_tool.py build build/package-stage dist/kernelloader.tefpkg 0x114514 -c tools/compress_loader.json
           python3 tools/package_loader.py
+          mkdir -p build/install-package
+          unzip -q dist/KernelLoader-*.zip -d build/install-package
       - uses: actions/upload-artifact@v4
         with:
           name: KernelLoader-install-package
-          path: dist/KernelLoader-*.zip
+          path: build/install-package/*
           if-no-files-found: error
