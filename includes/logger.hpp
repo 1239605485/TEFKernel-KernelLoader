@@ -25,21 +25,36 @@
 #include <spdlog/spdlog.h>
 #include "../mod-api/mod_logger.h"
 
-#if !defined(NDEBUG)
-#define LOG_TRACE(...)    spdlog::trace("[{}:{}:{}] {}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__))
-#define LOG_DEBUG(...)    spdlog::debug("[{}:{}:{}] {}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__))
-#define LOG_INFO(...)     spdlog::info("[{}:{}:{}] {}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__))
-#define LOG_WARN(...)     spdlog::warn("[{}:{}:{}] {}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__))
-#define LOG_ERROR(...)    spdlog::error("[{}:{}:{}] {}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__))
-#define LOG_CRITICAL(...) spdlog::critical("[{}:{}:{}] {}", __FILE__, __LINE__, __FUNCTION__, fmt::format(__VA_ARGS__))
-#else
-#define LOG_TRACE(...)    spdlog::trace("{}", fmt::format(__VA_ARGS__))
-#define LOG_DEBUG(...)    spdlog::debug("{}", fmt::format(__VA_ARGS__))
-#define LOG_INFO(...)     spdlog::info("{}", fmt::format(__VA_ARGS__))
-#define LOG_WARN(...)     spdlog::warn("{}", fmt::format(__VA_ARGS__))
-#define LOG_ERROR(...)    spdlog::error("{}", fmt::format(__VA_ARGS__))
-#define LOG_CRITICAL(...) spdlog::critical("{}", fmt::format(__VA_ARGS__))
-#endif
+#include <cstdio>
+#include <mutex>
+#include <string>
+namespace kernelloader {
+inline std::string diagnosticLogPath;
+inline std::mutex diagnosticLogMutex;
+inline void writeRuntimeLog(int level, const std::string &message) {
+    {
+        std::lock_guard<std::mutex> guard(diagnosticLogMutex);
+        if (!diagnosticLogPath.empty()) {
+            if (auto file = std::fopen(diagnosticLogPath.c_str(), "a")) {
+                std::fprintf(file, "[%d] %s\n", level, message.c_str());
+                std::fclose(file);
+            }
+        }
+    }
+}
+template<class... Args> inline void persistentLog(int level, const char *pattern, const Args &...args) {
+    const auto message = fmt::format(fmt::runtime(pattern), args...);
+    writeRuntimeLog(level, message);
+    if (auto logger = spdlog::get("KernelLoader"))
+        logger->log(static_cast<spdlog::level::level_enum>(level), "{}", message);
+}
+}
+#define LOG_TRACE(...) kernelloader::persistentLog(0, __VA_ARGS__)
+#define LOG_DEBUG(...) kernelloader::persistentLog(1, __VA_ARGS__)
+#define LOG_INFO(...) kernelloader::persistentLog(2, __VA_ARGS__)
+#define LOG_WARN(...) kernelloader::persistentLog(3, __VA_ARGS__)
+#define LOG_ERROR(...) kernelloader::persistentLog(4, __VA_ARGS__)
+#define LOG_CRITICAL(...) kernelloader::persistentLog(5, __VA_ARGS__)
 
 
 namespace kernelloader::logger {
