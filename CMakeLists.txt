@@ -10,19 +10,21 @@ else()
     add_compile_options(-g -O0)
 endif()
 
-set(ANDROID_MODE OFF)
+option(ANDROID_MODE "Legacy Android mode" OFF)
 if (${ANDROID_MODE})
     set(ANDROID ON)
     add_compile_definitions(__ANDROID__)
-    set(CMAKE_SYSROOT ~/Android/Sdk/ndk/30.0.14904198/toolchains/llvm/prebuilt/linux-x86_64/sysroot/)
+    # The NDK toolchain supplies its own sysroot.
 endif ()
 
 add_subdirectory(lib/spdlog-1.17.0)
 
 add_library(KernelLoader SHARED
-        src/weapon_action/service.cpp
         src/core.cpp
         src/logger.cpp
+        src/gui.cpp
+        src/gui_images.cpp
+        src/gui_ime.cpp
         includes/tefkernel/tef_api_imp.c
 )
 
@@ -33,7 +35,7 @@ target_include_directories(KernelLoader
 )
 
 target_link_libraries(KernelLoader
-        spdlog::spdlog
+        PRIVATE spdlog::spdlog
 )
 
 
@@ -117,16 +119,61 @@ set_target_properties(KernelLoader PROPERTIES
     OUTPUT_NAME "loader.${SYSTEM_NAME}.${ARCH}"
 )
 
-option(KERNELLOADER_BUILD_TESTS "Build Linux x64 loader regression tests" OFF)
-if(KERNELLOADER_BUILD_TESTS)
-    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR NOT ARCH STREQUAL "x64" OR ANDROID)
-        message(FATAL_ERROR "Loader regression tests require a Linux x64 host")
+if(ANDROID)
+    add_subdirectory(lib/gui-xdl)
+    set_target_properties(xdl PROPERTIES C_VISIBILITY_PRESET hidden)
+    target_link_libraries(KernelLoader PRIVATE xdl ${CMAKE_DL_LIBS})
+endif()
+option(KERNELLOADER_BUILD_GUI_DEMO "Build native GUI test mod" OFF)
+if(KERNELLOADER_BUILD_GUI_DEMO)
+    add_library(gui_demo SHARED examples/gui_demo/gui_demo.cpp)
+    target_include_directories(gui_demo PRIVATE mod-api)
+    target_compile_definitions(gui_demo PRIVATE BUILDING_DLL=1)
+    if(WIN32)
+        set_target_properties(gui_demo PROPERTIES PREFIX "" OUTPUT_NAME "gui_demo.windows.${ARCH}")
+    elseif(APPLE)
+        set_target_properties(gui_demo PROPERTIES OUTPUT_NAME "gui_demo.macos.${ARCH}")
+    else()
+        set_target_properties(gui_demo PROPERTIES OUTPUT_NAME "gui_demo.${SYSTEM_NAME}.${ARCH}")
     endif()
+endif()
+option(KERNELLOADER_BUILD_GUI_TESTS "Build host GUI runtime tests" OFF)
+if(KERNELLOADER_BUILD_GUI_TESTS AND NOT ANDROID AND NOT WIN32)
     enable_testing()
-    add_executable(weapon_action_tests tests/weapon_action_tests.cpp)
-    target_link_libraries(weapon_action_tests PRIVATE KernelLoader)
-    add_test(NAME weapon_action COMMAND weapon_action_tests)
-    add_executable(loader_runtime_tests tests/runtime_tests.cpp)
-    target_link_libraries(loader_runtime_tests PRIVATE KernelLoader)
-    add_test(NAME loader_runtime COMMAND loader_runtime_tests)
+    find_package(Threads REQUIRED)
+    add_executable(gui_runtime_test tests/gui_runtime_test.cpp src/gui_images.cpp src/gui_ime.cpp includes/tefkernel/tef_api_imp.c)
+    target_include_directories(gui_runtime_test PRIVATE includes mod-api)
+    target_link_libraries(gui_runtime_test PRIVATE spdlog::spdlog Threads::Threads)
+    target_compile_options(gui_runtime_test PRIVATE -UNDEBUG)
+    add_test(NAME gui_runtime_test COMMAND gui_runtime_test)
+endif()
+
+if(MINGW)
+    target_link_options(KernelLoader PRIVATE -static)
+    target_link_options(KernelLoader PRIVATE -Wl,--export-all-symbols)
+    if(TARGET gui_demo)
+        target_link_options(gui_demo PRIVATE -static)
+    endif()
+endif()
+if(KERNELLOADER_BUILD_GUI_TESTS AND NOT ANDROID AND NOT WIN32)
+    add_executable(gui_android_input_test tests/gui_android_input_test.cpp src/gui_ime.cpp includes/tefkernel/tef_api_imp.c)
+    target_include_directories(gui_android_input_test PRIVATE includes mod-api)
+    target_link_libraries(gui_android_input_test PRIVATE spdlog::spdlog Threads::Threads)
+    target_compile_definitions(gui_android_input_test PRIVATE __ANDROID__=1)
+    target_compile_options(gui_android_input_test PRIVATE -UNDEBUG)
+    add_test(NAME gui_android_input_test COMMAND gui_android_input_test)
+endif()
+
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/ime/pinyin.tsv" GUI_PINYIN_DATA)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/gui_pinyin_data.hpp" "#pragma once\nstatic const char gui_pinyin_data[] = R\"KL_IME(${GUI_PINYIN_DATA})KL_IME\";\n")
+target_include_directories(KernelLoader PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+if(KERNELLOADER_BUILD_GUI_TESTS AND NOT ANDROID AND NOT WIN32)
+    foreach(t gui_runtime_test gui_android_input_test)
+        target_include_directories(${t} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    endforeach()
+    add_executable(gui_ime_test tests/gui_ime_test.cpp src/gui_ime.cpp)
+    target_include_directories(gui_ime_test PRIVATE includes "${CMAKE_CURRENT_BINARY_DIR}")
+    target_compile_options(gui_ime_test PRIVATE -UNDEBUG)
+    add_test(NAME gui_ime_test COMMAND gui_ime_test)
 endif()

@@ -23,6 +23,7 @@
 #include "logger.hpp"
 #include <spdlog/sinks/android_sink.h>
 #include <spdlog/sinks/sink.h>
+#include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <memory>
 #include <cstdarg>
@@ -43,7 +44,6 @@ static spdlog::level::level_enum convert_log_level(const mod_log_level_t level) 
 void kernelloader::logger::init() {
     try {
         if (auto existing_logger = spdlog::get("KernelLoader")) {
-            g_logger = existing_logger;
             return;
         }
 
@@ -62,6 +62,13 @@ void kernelloader::logger::init() {
         sinks.push_back(stdout_sink);
 #endif
 
+        /*
+        if (!filename.empty()) {
+            const auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(filename, true);
+            file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] [%n] [%t] %v");
+            sinks.push_back(file_sink);
+        }
+        */
 
         auto logger = std::make_shared<spdlog::logger>("KernelLoader", begin(sinks), end(sinks));
 #if  !defined(NDEBUG)
@@ -91,15 +98,14 @@ void kernelloader::logger::init() {
 void kernelloader::logger::shutdown() {
     LOG_INFO("Shutting down logger...");
 
-    if (g_logger) g_logger->flush();
-    g_logger.reset();
+    g_logger->flush();
     spdlog::drop("KernelLoader");
+    spdlog::shutdown();
 }
 
 void kernelloader::logger::init_mod() {
     try {
         if (auto existing_logger = spdlog::get("KernelLoaderMod")) {
-            g_mod_logger = existing_logger;
             return;
         }
 
@@ -123,12 +129,13 @@ void kernelloader::logger::init_mod() {
 
         if (!spdlog::get("KernelLoaderMod")) {
             spdlog::register_logger(logger);
+            spdlog::set_default_logger(logger);
         } else {
             logger = spdlog::get("KernelLoaderMod");
         }
 
         logger->flush_on(spdlog::level::info);
-        g_mod_logger = logger;
+        g_logger = logger;
 
         LOG_INFO("New logger initialized successfully.");
 
@@ -139,8 +146,7 @@ void kernelloader::logger::init_mod() {
 }
 
 void kernelloader::logger::shutdown_mod() {
-    if (g_mod_logger) g_mod_logger->flush();
-    g_mod_logger.reset();
+    g_mod_logger->flush();
     spdlog::drop("KernelLoaderMod");
 }
 
@@ -151,7 +157,7 @@ void kernelloader::logger::mod_logger_write_imp(const mod_log_level_t level, con
     auto logger = g_mod_logger;
     if (!logger) {
         logger = g_logger;
-
+        if (!logger) return;
     }
 
     // 格式化消息
@@ -168,9 +174,6 @@ void kernelloader::logger::mod_logger_write_imp(const mod_log_level_t level, con
     } else {
         message = buffer;
     }
-
-    kernelloader::writeRuntimeLog(static_cast<int>(convert_log_level(level)), message);
-    if (!logger) return;
 
     // 输出日志
     switch (convert_log_level(level)) {
