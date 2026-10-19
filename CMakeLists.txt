@@ -20,6 +20,7 @@ endif ()
 add_subdirectory(lib/spdlog-1.17.0)
 
 add_library(KernelLoader SHARED
+        src/weapon_action/service.cpp
         src/core.cpp
         src/logger.cpp
         includes/tefkernel/tef_api_imp.c
@@ -122,6 +123,9 @@ if(KERNELLOADER_BUILD_TESTS)
         message(FATAL_ERROR "Loader regression tests require a Linux x64 host")
     endif()
     enable_testing()
+    add_executable(weapon_action_tests tests/weapon_action_tests.cpp)
+    target_link_libraries(weapon_action_tests PRIVATE KernelLoader)
+    add_test(NAME weapon_action COMMAND weapon_action_tests)
     add_executable(loader_runtime_tests tests/runtime_tests.cpp)
     target_link_libraries(loader_runtime_tests PRIVATE KernelLoader)
     add_test(NAME loader_runtime COMMAND loader_runtime_tests)

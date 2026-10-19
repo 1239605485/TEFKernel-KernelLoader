@@ -21,6 +21,7 @@
  *******************************************************************************/
 
 #include "core.hpp"
+#include "weapon_action.hpp"
 #include "json.hpp"
 
 #include <fstream>
@@ -272,6 +273,9 @@ ml_result_t kernelloader::core::load_mod(mod_manifest_t *mod_manifest) {
             LOG_DEBUG("Logger function pointer set in mod");
         }
 
+        bool actionTracked=weapon_action::track_owner(mod_handle,residency && *residency==2);
+        auto actionSlot=static_cast<const wa_api_v1 **>(memdl_sym(handle,"kernel_weapon_action_api_v1"));
+        if(actionSlot)*actionSlot=actionTracked?weapon_action::api():nullptr;
         LOG_INFO("Mod loaded successfully: {}", mod_manifest->mod_id);
         return ML_SUCCESS;
 
@@ -306,7 +310,10 @@ ml_result_t kernelloader::core::unload_mod(mod_manifest_t *mod_manifest) {
     const auto mod_multiplayer_mod_info = kernel_mod_multiplayer_mod_infos[mod_manifest->mod_id];
 
     LOG_DEBUG("Cleaning up mod operations...");
+    weapon_action::release_owner(mod);
     mod->ops->cleanup_mod(mod);
+    auto actionSlot=static_cast<const wa_api_v1 **>(memdl_sym(mod->lib_handle,"kernel_weapon_action_api_v1"));
+    if(actionSlot)*actionSlot=nullptr;
 
     LOG_DEBUG("Closing library handle...");
     if (!residentMods.count(mod_manifest->mod_id)) {
@@ -412,8 +419,8 @@ ml_result_t kernelloader::core::cleanup_ml(ml_entry_t *ml_entry) {
 const ml_info_t * kernelloader::core::get_info() {
     static ml_info_t info = {
         "eternal.future.kernelloader",
-        4,
-        "1.0.3",
+        5,
+        "1.0.4",
         1,
         0,
         nullptr

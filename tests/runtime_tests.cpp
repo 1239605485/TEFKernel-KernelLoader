@@ -1,4 +1,5 @@
 #include "core.hpp"
+#include "weapon_action.hpp"
 #include "logger.hpp"
 #include "tefkernel/memdl/memdl.h"
 #include "tefkernel/tefplugin/tpf_core.h"
@@ -14,6 +15,7 @@ namespace {
 int closed{},cleaned{},initialized{},residency=1;
 bool resident{},hasLogger{};
 void *loggerSlot{};
+const wa_api_v1 *actionSlot{};
 void init(kernel_mod_handle_t *) {++initialized;}
 void cleanup(kernel_mod_handle_t *) {++cleaned;}
 kernel_mod_info_t info{"test.mod",1,1,"1.0"};
@@ -27,6 +29,7 @@ bool registerLibrary(void *){return true;}
 void *symbol(memdl_handle_t,const char *name){
  if(!std::strcmp(name,"create_kernel_mod"))return reinterpret_cast<void *>(create);
  if(!std::strcmp(name,"kernel_mod_residency_v1"))return resident?&residency:nullptr;
+ if(!std::strcmp(name,"kernel_weapon_action_api_v1"))return &actionSlot;
  if(!std::strcmp(name,"mod_logger_write"))return hasLogger?&loggerSlot:nullptr;
  return nullptr;
 }
@@ -60,11 +63,11 @@ int main(){
  auto path=config.string(),priv=privateDir.string();
  mod_manifest_t manifest{path.c_str(),"test.mod",priv.c_str(),nullptr};
  resident=true;hasLogger=true;
- CHECK(core::load_mod(&manifest)==ML_SUCCESS && residency==2 && loggerSlot);
+ CHECK(core::load_mod(&manifest)==ML_SUCCESS && residency==2 && loggerSlot && actionSlot && actionSlot->abi==1);
  CHECK(core::init_mod(&manifest)==ML_SUCCESS && initialized==1);
  CHECK(core::reload_mod(&manifest)==ML_ERROR);
  CHECK(cleaned==0 && core::kernel_mod_handles.count("test.mod")==1);
- CHECK(core::unload_mod(&manifest)==ML_SUCCESS && cleaned==1 && closed==0 && !loggerSlot);
+ CHECK(core::unload_mod(&manifest)==ML_SUCCESS && cleaned==1 && closed==0 && !loggerSlot && !actionSlot);
  CHECK(core::load_mod(&manifest)==ML_ERROR);
  // A regular mod without an optional logger slot must load and unload normally.
  manifest.mod_id="test.regular";resident=false;hasLogger=false;

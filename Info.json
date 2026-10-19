@@ -3,8 +3,8 @@
   "name": "KernelLoader",
   "author": "eternalfuture-e38299",
   "description": "一款轻量的ModLoader, 旨意提供底层内核的api",
-  "version": "1.0.3",
-  "versionCode": 4,
+  "version": "1.0.4",
+  "versionCode": 5,
   "detailedInformationURL": "https://github.com/eternalfuture-e38299/TEFKernel-KernelLoader",
   "dependence": [],
   "support": {
